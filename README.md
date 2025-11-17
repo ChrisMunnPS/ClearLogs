@@ -43,3 +43,7 @@ foreach ($log in $logs) {
         Write-Warning "Failed to clear modern log: $log — $($_.Exception.Message)"
     }
 }
+```
+
+
+<img width="545" height="831" alt="image" src="https://github.com/user-attachments/assets/6b0c224a-77b1-490f-8b4b-90c4ad0503f4" />
