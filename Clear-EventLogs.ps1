@@ -393,9 +393,9 @@ function Backup-EventLogs {
                 $backupFile = Join-Path $backupFolder "Classic_$($LogsToProcess.SpecificLog).evtx"
                 Write-Log "  Backing up: $($LogsToProcess.SpecificLog)" -Level INFO
                 
-                $result = wevtutil epl "$($LogsToProcess.SpecificLog)" "$backupFile" 2>&1
+                wevtutil epl "$($LogsToProcess.SpecificLog)" "$backupFile" 2>&1 | Out-Null
                 
-                if ($LASTEXITCODE -eq 0) {
+                if ($LASTEXITCODE -eq 0 -and (Test-Path $backupFile)) {
                     $successCount++
                 } else {
                     throw "wevtutil failed with exit code $LASTEXITCODE"
@@ -416,9 +416,9 @@ function Backup-EventLogs {
                     $backupFile = Join-Path $backupFolder "Classic_$logName.evtx"
                     Write-Log "  Backing up: $logName" -Level INFO
                     
-                    $result = wevtutil epl "$logName" "$backupFile" 2>&1
+                    wevtutil epl "$logName" "$backupFile" 2>&1 | Out-Null
                     
-                    if ($LASTEXITCODE -eq 0) {
+                    if ($LASTEXITCODE -eq 0 -and (Test-Path $backupFile)) {
                         $successCount++
                     } else {
                         throw "wevtutil failed with exit code $LASTEXITCODE"
@@ -441,9 +441,9 @@ function Backup-EventLogs {
                     $backupFile = Join-Path $backupFolder "Modern_$safeLogName.evtx"
                     Write-Log "  Backing up: $log" -Level INFO
                     
-                    $result = wevtutil epl "$log" "$backupFile" 2>&1
+                    wevtutil epl "$log" "$backupFile" 2>&1 | Out-Null
                     
-                    if ($LASTEXITCODE -eq 0) {
+                    if ($LASTEXITCODE -eq 0 -and (Test-Path $backupFile)) {
                         $successCount++
                     } else {
                         throw "wevtutil failed with exit code $LASTEXITCODE"
@@ -467,9 +467,9 @@ function Backup-EventLogs {
                     $backupFile = Join-Path $backupFolder "Modern_$safeLogName.evtx"
                     Write-Log "  Backing up: $log" -Level INFO
                     
-                    $result = wevtutil epl "$log" "$backupFile" 2>&1
+                    wevtutil epl "$log" "$backupFile" 2>&1 | Out-Null
                     
-                    if ($LASTEXITCODE -eq 0) {
+                    if ($LASTEXITCODE -eq 0 -and (Test-Path $backupFile)) {
                         $successCount++
                     } else {
                         throw "wevtutil failed with exit code $LASTEXITCODE"
@@ -494,6 +494,7 @@ function Backup-EventLogs {
 }
 
 function Clear-SpecificLog {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$LogName,
         [bool]$WhatIfMode
@@ -518,9 +519,12 @@ function Clear-SpecificLog {
         Write-Log "  Failed to clear ${LogName}: $errorMsg" -Level ERROR
         return $false
     }
+    
+    return $false
 }
 
 function Clear-ClassicLogs {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string[]]$LogNames,
         [bool]$WhatIfMode
@@ -539,6 +543,7 @@ function Clear-ClassicLogs {
                 if ($PSCmdlet.ShouldProcess($logName, "Clear classic event log")) {
                     Write-Log "  Clearing: $logName" -Level INFO
                     Clear-EventLog -LogName $logName -ErrorAction Stop
+                    Write-Log "  Successfully cleared: $logName" -Level SUCCESS
                     $successCount++
                 }
             }
@@ -554,6 +559,7 @@ function Clear-ClassicLogs {
 }
 
 function Clear-ModernLogs {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string[]]$LogNames,
         [bool]$AllLogs,
@@ -582,6 +588,7 @@ function Clear-ModernLogs {
                         wevtutil cl "$log" 2>&1 | Out-Null
                         
                         if ($LASTEXITCODE -eq 0) {
+                            Write-Log "  Successfully cleared: $log" -Level SUCCESS
                             $successCount++
                         } else {
                             throw "wevtutil failed with exit code $LASTEXITCODE"
@@ -703,28 +710,45 @@ if (-not $NoBackup -and -not $WhatIfPreference) {
 
 # Clear logs based on type
 Write-Host ""
-$operationSuccess = $true
+$allOperationsSuccessful = $true
 
 if ($logsToProcess.SpecificLog) {
-    $operationSuccess = Clear-SpecificLog -LogName $logsToProcess.SpecificLog -WhatIfMode:$WhatIfPreference
+    $result = Clear-SpecificLog -LogName $logsToProcess.SpecificLog -WhatIfMode:$WhatIfPreference
+    if (-not $result) {
+        $allOperationsSuccessful = $false
+    }
 }
 
 if ($logsToProcess.Classic.Count -gt 0) {
-    $operationSuccess = Clear-ClassicLogs -LogNames $logsToProcess.Classic -WhatIfMode:$WhatIfPreference
+    $result = Clear-ClassicLogs -LogNames $logsToProcess.Classic -WhatIfMode:$WhatIfPreference
+    if (-not $result) {
+        $allOperationsSuccessful = $false
+    }
 }
 
 if ($logsToProcess.Modern) {
-    $operationSuccess = Clear-ModernLogs -LogNames @() -AllLogs:$true -WhatIfMode:$WhatIfPreference
+    $result = Clear-ModernLogs -LogNames @() -AllLogs:$true -WhatIfMode:$WhatIfPreference
+    if (-not $result) {
+        $allOperationsSuccessful = $false
+    }
 }
 
 if ($logsToProcess.ModernSpecific.Count -gt 0) {
-    $operationSuccess = Clear-ModernLogs -LogNames $logsToProcess.ModernSpecific -AllLogs:$false -WhatIfMode:$WhatIfPreference
+    $result = Clear-ModernLogs -LogNames $logsToProcess.ModernSpecific -AllLogs:$false -WhatIfMode:$WhatIfPreference
+    if (-not $result) {
+        $allOperationsSuccessful = $false
+    }
 }
 
 # Summary
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Log "Operation completed" -Level SUCCESS
+
+if ($allOperationsSuccessful) {
+    Write-Log "Operation completed successfully" -Level SUCCESS
+} else {
+    Write-Log "Operation completed with some failures" -Level WARNING
+}
 
 if ($backupPerformed) {
     Write-Log "Backup location: $backupLocation" -Level SUCCESS
@@ -733,4 +757,9 @@ if ($backupPerformed) {
 Write-Log "Detailed log: $logFile" -Level INFO
 Write-Host "========================================" -ForegroundColor Cyan
 
-exit 0
+# Exit with appropriate code
+if ($allOperationsSuccessful) {
+    exit 0
+} else {
+    exit 1
+}
